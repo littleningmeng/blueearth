@@ -1,0 +1,7 @@
+dist
+build
+*.pyc
+proxy.txt
+*.jpg
+*.png
+*.txt

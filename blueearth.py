@@ -242,7 +242,13 @@ def main():
         os.system("color 0A && title %s" % os.path.basename(sys.argv[0]))
 
     print_tip_at_start()
-    
+    if(len(sys.argv) > 1) and sys.argv[1].startswith("--level"):
+        try:
+            zoom_level = int(sys.argv[1].split("=")[1])
+            print "Using zoom level: %d" % zoom_level
+        except:
+            pass
+            
     urls = get_latest_fragments()
     stitching(urls)
     set_wallpaper(save_img_file)
