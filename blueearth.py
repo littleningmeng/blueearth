@@ -209,7 +209,7 @@ def get_fragments_by_date(date, time, zoomlv=zoom_level):
     
     return urls
     
-def get_latest_fragments():
+def get_latest_fragments(zoomlv=zoom_level):
     res = safe_urlopen(latest_json_url)
     jsonstr = res.read()  # like this: {"date":"2017-02-27 01:20:00","file":"PI_H08_20170227_0120_TRC_FLDK_R10_PGPFD.png"}   
     try:
@@ -226,7 +226,7 @@ def get_latest_fragments():
         
     date, time = datestr.split(" ")#"2017-02-27 22:20:00".split(" ")#
     date, time = date.replace("-", "/"), time.replace(":", "")
-    return get_fragments_by_date(date, time)
+    return get_fragments_by_date(date, time, zoomlv)
     
 def print_tip_at_start():
     t = 0.01
@@ -242,6 +242,7 @@ def main():
         os.system("color 0A && title %s" % os.path.basename(sys.argv[0]))
 
     print_tip_at_start()
+    global zoom_level
     if(len(sys.argv) > 1) and sys.argv[1].startswith("--level"):
         try:
             zoom_level = int(sys.argv[1].split("=")[1])
@@ -249,7 +250,7 @@ def main():
         except:
             pass
             
-    urls = get_latest_fragments()
+    urls = get_latest_fragments(zoom_level)
     stitching(urls)
     set_wallpaper(save_img_file)
     print "Finished, enjoy!!"
