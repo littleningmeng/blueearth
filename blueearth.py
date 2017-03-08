@@ -42,6 +42,13 @@ daughter_birthday = "20170104"
 save_img_file = "earth.jpg"
 proportion = 1.78            # width / heith
 zoom_level = 4               # image zoom level of himawari8 , curent supported: 1, 2, 4, 8, ..., 20(MAX)
+if(len(sys.argv) > 1) and sys.argv[1].startswith("--level"):
+    try:
+        zoom_level = int(sys.argv[1].split("=")[1])
+        print "Using zoom level: %d" % zoom_level
+    except:
+        pass
+            
 png_unit_size = 550          # per earth fragment size is 550x550
 y_offset = png_unit_size / 2 # y offset when we splice the fragments
 png_height = png_unit_size * zoom_level + 2 * y_offset
@@ -50,9 +57,7 @@ x_offset = (png_width - png_unit_size * zoom_level) / 2
 latest_json_url = "http://himawari8-dl.nict.go.jp/himawari8/img/D531106/latest.json"
 earth_templ_url = "http://himawari8.nict.go.jp/img/D531106/{}d/550/{}/{}_{}_{}.png"
 
-thread_num = zoom_level * zoom_level
-if thread_num > 64: thread_num = 64          # 限制下线程个数
-pool = threadpool.ThreadPool(thread_num)
+pool = threadpool.ThreadPool(64)
 
 tip_at_start = u"""BLUEEARTH STARTED
 ---------------------------------------------------
@@ -242,14 +247,6 @@ def main():
         os.system("color 0A && title %s" % os.path.basename(sys.argv[0]))
 
     print_tip_at_start()
-    global zoom_level
-    if(len(sys.argv) > 1) and sys.argv[1].startswith("--level"):
-        try:
-            zoom_level = int(sys.argv[1].split("=")[1])
-            print "Using zoom level: %d" % zoom_level
-        except:
-            pass
-            
     urls = get_latest_fragments(zoom_level)
     stitching(urls)
     set_wallpaper(save_img_file)
