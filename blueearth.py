@@ -30,8 +30,12 @@ import os
 import sys
 import gevent
 import requests
+from gevent import monkey
 from PIL import Image
 from logger import create_logger
+
+
+monkey.patch_socket()
 
 log = create_logger(__name__, "history.log")
 save_img_file = "earth.png"
