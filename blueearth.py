@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
     blueearth.py
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -28,160 +28,94 @@
 
 import os
 import sys
-import time
-import json
-import qrcode
-import threadpool
-from cStringIO import StringIO
-from urllib import urlopen
-from Tkinter import Tk, Label, Button
-from PIL import Image, ImageTk
+import gevent
+import requests
+from PIL import Image
+from logger import create_logger
 
-magic_file_name = u"可爱的小柠檬.txt"
-daughter_birthday = "20170104"
-save_img_file = "earth.jpg"
-proportion = 1.78            # width / heith
-zoom_level = 4               # image zoom level of himawari8 , curent supported: 1, 2, 4, 8, ..., 20(MAX)
+log = create_logger(__name__, "history.log")
+save_img_file = "earth.png"
+proportion = 1            # width / heith
+zoom_level = 4            # image zoom level of himawari8 , curent supported: 1, 2, 4, 8, ..., 20(MAX)
 if(len(sys.argv) > 1) and sys.argv[1].startswith("--level"):
     try:
         zoom_level = int(sys.argv[1].split("=")[1])
-        print "Using zoom level: %d" % zoom_level
-    except:
+        log.debug("Using zoom level: %d" % zoom_level)
+    except ValueError as e:
         pass
             
-png_unit_size = 550          # per earth fragment size is 550x550
-y_offset = png_unit_size / 2 # y offset when we splice the fragments
+png_unit_size = 550                   # per earth fragment size is 550x550
+y_offset = int(png_unit_size / 2.0)   # y offset when we splice the fragments
 png_height = png_unit_size * zoom_level + 2 * y_offset
 png_width = int(png_height * proportion)
-x_offset = (png_width - png_unit_size * zoom_level) / 2
+x_offset = int((png_width - png_unit_size * zoom_level) / 2.0)
 latest_json_url = "http://himawari8-dl.nict.go.jp/himawari8/img/D531106/latest.json"
 earth_templ_url = "http://himawari8.nict.go.jp/img/D531106/{}d/550/{}/{}_{}_{}.png"
-
-pool = threadpool.ThreadPool(64)
-
-tip_at_start = u"""BLUEEARTH STARTED
----------------------------------------------------
+proxy_conf = "proxy.txt"
+proxy_addr = ""
+tip_at_start = u"""
   satellite:\thimawari8(ひまわり8号)
 launch time:\t2014/10/7
   longitude:\t140.7
    latitude:\t0
      height:\t35,800 KM
 ---------------------------------------------------
-Project by Apache
-For my lovely daughter's space exploration dream!
+especially for my lovely daughter's space exploration dream!
 
 """
-    
-########################################################################
-proxy_conf = "proxy.txt"
-proxy_addr = ""
-try:
-    proxy_addr = open(proxy_conf, "r").read().strip()       # no check, please set right proxy address
-    print "Using proxy: %s" % proxy_addr
-except:
-    pass
-########################################################################
 
-def set_wallpaper(img_path):
-    platform = sys.platform
-    if platform.startswith("win"):
-        import ctypes
-        SPI_SETDESKWALLPAPER = 20 
-        ctypes.windll.user32.SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, img_path, 3)
-    else:
-        # todo
-        pass
-
-def dont_show_qrcode():
-    return os.path.exists(magic_file_name) or (len(sys.argv) > 1 and sys.argv[1] == "--%s" % daughter_birthday)
-    
-def paste_qrcode(target, qrcode_buff):
-    if dont_show_qrcode():
-       # NO QRCODE WILL BE PASTED
-       return
-       
-    img = Image.open(StringIO(qrcode_buff))
-    tw, th = target.size
-    qw, qh = img.size
-    target.paste(img, (tw - qw, (th - qh) / 2, tw, (th - qh) / 2 + qh))
-    
-def pop_qrcode_window(qrcode_buff):
-    if dont_show_qrcode():
-        return 
-        
-    def on_button_clicked():
-        try:
-            open(magic_file_name, "w").write("""Hi, guy
-If you like this app, a little donation will make it better!
-Re-run the app to remove QR-code on your wallpaper""" )
-        except:
-            pass
-            
-        finally:
-            sys.exit(1)
-            
-    tk = Tk()
-    tk.wm_attributes('-topmost', 1)
-    tk.title(u"您的捐助可以让BLUEEARTH做的更好！")
-    img2 = Image.open(StringIO(qrcode_buff))
-    tk_img = ImageTk.PhotoImage(img2)
-    label = Label(tk, image=tk_img)
-    label.pack()
-    button = Button(tk, text="Don't show this anymore", command=on_button_clicked, bg="green")
-    button.pack()
-    tk.mainloop()
+if os.path.exists(proxy_conf):
+    try:
+        with open(proxy_conf, "r") as f:
+            proxy_addr = f.read().strip()
+            log.debug("Using proxy: %s" % proxy_addr)
+    except IOError as e1:
+        log.error("fail to load proxy")
 
 
 def safe_urlopen(url):
     try:
-        if proxy_addr.startswith("http"):
-            res = urlopen(url, proxies={"http": proxy_addr})
-        else:
-            res = urlopen(url)
-        
-        return res
-        
-    except Exception as e:
-        print """ERROR:\nNetwork unreachable!
+        return requests.get(url, proxies={"http": proxy_addr}) if proxy_addr.startswith("http") else requests.get(url)
+    except requests.exceptions.ConnectionError as e1:
+        log.error("""Network unreachable! Exp: %s
 If you have http proxy, please write it to proxy.txt
-Thes proxy address format looks like http://xxx.com:8080"""
-        raw_input("anykey to quit")
+proxy example: http://xxx.com:8080""" % e1)
         sys.exit(1)
-        
+
+
 def download_task(url):
     res = safe_urlopen(url)
-    open(os.path.basename(url), "wb").write(res.read())
-    print "success         %s" % os.path.basename(url)
+    with open(os.path.basename(url), "wb") as fp:
+        fp.write(res.content)
+    log.info("success    %s" % os.path.basename(url))
+
 
 def update_pilimage_list(datalist, fpath):
     fp = open(fpath, "rb")
     datalist.append((Image.open(fp), fp, fpath))
-    
+
+
 def stitching(urls, zoomlv=zoom_level):
     datalist, index = [], 0
     for url in urls:
         fpath = os.path.basename(url)
         try:
             update_pilimage_list(datalist, fpath)
-        except IOError as e:
-            print "image file %s error!\ntrying to re-download" % fpath
-            try:
-                res = safe_urlopen(url)
-                open(fpath, "wb").write(res.read())
-                update_pilimage_list(datalist, fpath)
-                print "repaired:)"
-            except Exception as e:
-                print "unable to re-download!", e
-                return
+        except IOError as e1:
+            log.error("image file %s error! Exp: %s, trying to re-download" % (e1, fpath))
+            res = safe_urlopen(url)
+            with open(fpath, "wb") as fp:
+                fp.write(res.content)
+            update_pilimage_list(datalist, fpath)
+            log.debug("repaired:)")
             
-    target = Image.new('RGB', (png_width, png_height))
+    target = Image.new('RGB', (int(png_width), int(png_height)))
     x, y = 0, 0
-    for i in xrange(len(urls)):
-        col = i / zoomlv
-        target.paste(datalist[i][0], (x + x_offset + col * png_unit_size,
-                               y + y_offset,
-                               x + x_offset + png_unit_size + col * png_unit_size,
-                               y + png_unit_size + y_offset))
+    for i in range(len(urls)):
+        col = int(i / zoomlv)
+        target.paste(datalist[i][0], (int(x + x_offset + col * png_unit_size), int(y + y_offset),
+                                      int(x + x_offset + png_unit_size + col * png_unit_size),
+                                      int(y + png_unit_size + y_offset)))
         y += png_unit_size
         if (i + 1) % zoomlv == 0:
             y = 0
@@ -190,69 +124,41 @@ def stitching(urls, zoomlv=zoom_level):
         try:
             os.remove(datalist[i][2])
         except Exception as e:
-            print e
+            log.debug("fali to remove tmp files. Exp: %s" % repr(e))
 
-
-    try:
-        paste_qrcode(target, qrcode.qrcode_resource_data)
-        target.save(save_img_file, quality=100)
-    except Exception as e:
-        print e
-        print "fail to save image file!! please check your permission"
-        sys.exit(1)
+    target.save(save_img_file, quality=100)
 
     
 def get_fragments_by_date(date, time, zoomlv=zoom_level):
     urls = []
-    for i in xrange(zoomlv):
-        for j in xrange(zoomlv):
+    for i in range(zoomlv):
+        for j in range(zoomlv):
             urls.append(earth_templ_url.format(zoomlv, date, time, i, j))
-    
-    reqs = threadpool.makeRequests(download_task, urls, None)
-    [pool.putRequest(req) for req in reqs]
-    pool.wait()
-    
+
+    threads = [gevent.spawn(download_task, url) for url in urls]
+    gevent.joinall(threads)
     return urls
-    
+
+
 def get_latest_fragments(zoomlv=zoom_level):
     res = safe_urlopen(latest_json_url)
-    jsonstr = res.read()  # like this: {"date":"2017-02-27 01:20:00","file":"PI_H08_20170227_0120_TRC_FLDK_R10_PGPFD.png"}   
-    try:
-        datadict = json.loads(jsonstr)
-    except Exception as e:
-        print "ERROR:\nbad response, maybe you are behind of firewall.\nplease test you network and retry."
-        raw_input("anykey to quit")
+    # json data format: {"date":"2017-02-27 01:20:00","file":"PI_H08_20170227_0120_TRC_FLDK_R10_PGPFD.png"}
+    json_data = res.json()
+    date_str = json_data.get("date", "")
+    if date_str == "":
+        log.error("bad date string")
         sys.exit(1)
-        
-    datestr = datadict.get("date", "")
-    if datestr == "":
-        print "bad date string"
-        sys.exit(1)
-        
-    date, time = datestr.split(" ")#"2017-02-27 22:20:00".split(" ")#
-    date, time = date.replace("-", "/"), time.replace(":", "")
-    return get_fragments_by_date(date, time, zoomlv)
-    
-def print_tip_at_start():
-    t = 0.01
-    i = 0
-    for ch in tip_at_start:
-        if i == 251:
-            t = 0.05
-        sys.stdout.write(ch), time.sleep(t)
-        i += 1
-        
-def main():
-    if sys.platform.startswith("win"):
-        os.system("color 0A && title %s" % os.path.basename(sys.argv[0]))
+    date, t = date_str.split(" ")
+    date, t = date.replace("-", "/"), t.replace(":", "")
+    return get_fragments_by_date(date, t, zoomlv)
 
-    print_tip_at_start()
+
+def main():
+    print(tip_at_start)
     urls = get_latest_fragments(zoom_level)
     stitching(urls)
-    set_wallpaper(save_img_file)
-    print "Finished, enjoy!!"
-    pop_qrcode_window(qrcode.qrcode_resource_data)
-    
+    log.info("done")
+
+
 if __name__ == "__main__":
     main()
-    
