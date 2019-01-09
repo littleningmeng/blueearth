@@ -13,6 +13,7 @@ def auth():
     nonce = request.args.get("nonce")
     echostr = request.args.get("echostr")
     token = os.getenv("WX_TOKEN")
+    logger.debug("wx token=%s" % token)
     if not token:
         abort(500)
     _list = [token, timestamp, nonce]
