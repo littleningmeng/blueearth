@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from flask import Flask, render_template
+from views.wx import wx
 
 app = Flask(__name__)
 
