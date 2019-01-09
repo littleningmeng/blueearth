@@ -3,7 +3,7 @@ from flask import Flask, render_template
 from views.wx import wx
 
 app = Flask(__name__)
-app.register_blueprint(wx, "/wx")
+app.register_blueprint(wx, url_prefix="/wx")
 
 
 @app.route("/")
