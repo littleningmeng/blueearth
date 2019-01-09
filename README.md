@@ -11,4 +11,4 @@ python blueearth.py
 如果需要代理，则在代码目录创建proxy.txt文件，并写入代理地址，例如：  
 >http://web-proxy.test.com:8080
 
-![](./wx-donate.jpg)  
+![](./donate.jpg)  
