@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import hashlib
-from logger import logger
+from share import logger
 from flask import Blueprint, request, abort
 
 wx = Blueprint("wx", __name__)
