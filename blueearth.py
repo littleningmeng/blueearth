@@ -53,8 +53,8 @@ y_offset = int(png_unit_size / 2.0)   # y offset when we splice the fragments
 png_height = png_unit_size * zoom_level + 2 * y_offset
 png_width = int(png_height * proportion)
 x_offset = int((png_width - png_unit_size * zoom_level) / 2.0)
-latest_json_url = "http://himawari8-dl.nict.go.jp/himawari8/img/D531106/latest.json"
-earth_templ_url = "http://himawari8.nict.go.jp/img/D531106/{}d/550/{}/{}_{}_{}.png"
+latest_json_url = "https://himawari8.nict.go.jp/img/D531106/latest.json"
+earth_templ_url = "https://himawari8.nict.go.jp/img/D531106/{}d/550/{}/{}_{}_{}.png"
 proxy_conf = "proxy.txt"
 proxy_addr = ""
 tip_at_start = u"""
@@ -146,6 +146,8 @@ def get_fragments_by_date(date, time, zoomlv=zoom_level):
 
 def get_latest_fragments(zoomlv=zoom_level):
     res = safe_urlopen(latest_json_url)
+    if res.status_code != 200:
+        log.error(f"{res}")
     # json data format: {"date":"2017-02-27 01:20:00","file":"PI_H08_20170227_0120_TRC_FLDK_R10_PGPFD.png"}
     json_data = res.json()
     date_str = json_data.get("date", "")
