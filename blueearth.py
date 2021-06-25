@@ -22,29 +22,23 @@
                 日本附近：2.5分钟/1次
     静止经纬度	赤道, 东经140.7度附近
     图像传送	使用商用通信卫星传送
-    
-    CODE BY APACHE(2017/2/27，为了小柠檬的NASA航天梦)
 """
-
 import os
 import sys
 import gevent
 import requests
-from gevent import monkey
+from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
-from logger import create_logger
+from loguru import logger
 
 
-monkey.patch_socket()
-
-log = create_logger(__name__, "history.log")
 save_img_file = "earth.png"
-proportion = 1            # width / heith
+proportion = 1.78         # width / heith
 zoom_level = 4            # image zoom level of himawari8 , curent supported: 1, 2, 4, 8, ..., 20(MAX)
 if(len(sys.argv) > 1) and sys.argv[1].startswith("--level"):
     try:
         zoom_level = int(sys.argv[1].split("=")[1])
-        log.debug("Using zoom level: %d" % zoom_level)
+        logger.debug("Using zoom level: %d" % zoom_level)
     except ValueError as e:
         pass
             
@@ -55,43 +49,26 @@ png_width = int(png_height * proportion)
 x_offset = int((png_width - png_unit_size * zoom_level) / 2.0)
 latest_json_url = "https://himawari8.nict.go.jp/img/D531106/latest.json"
 earth_templ_url = "https://himawari8.nict.go.jp/img/D531106/{}d/550/{}/{}_{}_{}.png"
-proxy_conf = "proxy.txt"
-proxy_addr = ""
-tip_at_start = u"""
-  satellite:\thimawari8(ひまわり8号)
-launch time:\t2014/10/7
-  longitude:\t140.7
-   latitude:\t0
-     height:\t35,800 KM
----------------------------------------------------
-especially for my lovely daughter's space exploration dream!
-
-"""
-
-if os.path.exists(proxy_conf):
-    try:
-        with open(proxy_conf, "r") as f:
-            proxy_addr = f.read().strip()
-            log.debug("Using proxy: %s" % proxy_addr)
-    except IOError as e1:
-        log.error("fail to load proxy")
 
 
 def safe_urlopen(url):
     try:
-        return requests.get(url, proxies={"http": proxy_addr}) if proxy_addr.startswith("http") else requests.get(url)
-    except requests.exceptions.ConnectionError as e1:
-        log.error("""Network unreachable! Exp: %s
-If you have http proxy, please write it to proxy.txt
-proxy example: http://xxx.com:8080""" % e1)
-        sys.exit(1)
+        response = requests.get(url)
+        if response.status_code != 200:
+            logger.fatal(f"fail to get form {url}, status code is {response.status_code}")
+            
+        return response
+        
+    except requests.exceptions.ConnectionError as error:
+        logger.fatal(f"ConnectionError: {error}")
 
 
-def download_task(url):
+def download(url):
     res = safe_urlopen(url)
     with open(os.path.basename(url), "wb") as fp:
         fp.write(res.content)
-    log.info("success    %s" % os.path.basename(url))
+        
+    logger.info("success    %s" % os.path.basename(url))
 
 
 def update_pilimage_list(datalist, fpath):
@@ -105,13 +82,13 @@ def stitching(urls, zoomlv=zoom_level):
         fpath = os.path.basename(url)
         try:
             update_pilimage_list(datalist, fpath)
-        except IOError as e1:
-            log.error("image file %s error! Exp: %s, trying to re-download" % (e1, fpath))
+        except IOError as error:
+            logger.error(f"IOError for {fpath}: {error}")
             res = safe_urlopen(url)
             with open(fpath, "wb") as fp:
                 fp.write(res.content)
             update_pilimage_list(datalist, fpath)
-            log.debug("repaired:)")
+            logger.debug("repaired:)")
             
     target = Image.new('RGB', (int(png_width), int(png_height)))
     x, y = 0, 0
@@ -127,43 +104,46 @@ def stitching(urls, zoomlv=zoom_level):
         datalist[i][1].close()
         try:
             os.remove(datalist[i][2])
-        except Exception as e:
-            log.debug("fali to remove tmp files. Exp: %s" % repr(e))
+        except Exception as error:
+            logger.debug(f"remove tmp file exception: {error}")
 
     target.save(save_img_file, quality=100)
 
     
-def get_fragments_by_date(date, time, zoomlv=zoom_level):
+def get_fragments(date, time, zoomlv=zoom_level):
     urls = []
+    executor = ThreadPoolExecutor(max_workers=10)
     for i in range(zoomlv):
         for j in range(zoomlv):
-            urls.append(earth_templ_url.format(zoomlv, date, time, i, j))
-
-    threads = [gevent.spawn(download_task, url) for url in urls]
-    gevent.joinall(threads)
+            url = earth_templ_url.format(zoomlv, date, time, i, j)
+            urls.append(url)
+            executor.submit(download, url)
+            
+    executor.shutdown(wait=True)
+    
     return urls
 
 
 def get_latest_fragments(zoomlv=zoom_level):
     res = safe_urlopen(latest_json_url)
     if res.status_code != 200:
-        log.error(f"{res}")
+        logger.fatal(f"{res}")
     # json data format: {"date":"2017-02-27 01:20:00","file":"PI_H08_20170227_0120_TRC_FLDK_R10_PGPFD.png"}
     json_data = res.json()
     date_str = json_data.get("date", "")
     if date_str == "":
-        log.error("bad date string")
-        sys.exit(1)
+        logger.fatal("bad date string")
+
     date, t = date_str.split(" ")
     date, t = date.replace("-", "/"), t.replace(":", "")
-    return get_fragments_by_date(date, t, zoomlv)
+    
+    return get_fragments(date, t, zoomlv)
 
 
 def main():
-    print(tip_at_start)
     urls = get_latest_fragments(zoom_level)
     stitching(urls)
-    log.info("done")
+    logger.info("done")
 
 
 if __name__ == "__main__":
