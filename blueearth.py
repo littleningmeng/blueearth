@@ -25,7 +25,6 @@
 """
 import os
 import sys
-import gevent
 import requests
 from concurrent.futures import ThreadPoolExecutor
 from PIL import Image

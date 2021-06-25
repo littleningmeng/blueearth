@@ -106,4 +106,5 @@ venv/
 # config/local.cfg
 
 .log
-proxy.txt
+earth.png
+
